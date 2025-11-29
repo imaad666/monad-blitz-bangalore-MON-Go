@@ -6,6 +6,7 @@ import { parseEther, formatEther } from 'viem';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { getFaucetDeploymentBytecode } from '@/lib/deployFaucet';
+import { FAUCET_ABI } from '@/lib/contracts';
 import { showToast } from '@/lib/toast';
 
 const MONAD_TESTNET_CHAIN_ID = 10143;
@@ -61,7 +62,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
 
   const handleCreateFaucet = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!isConnected || !address) {
       alert('Please connect your wallet first');
       return;
@@ -97,7 +98,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
 
     try {
       const rewardWei = parseEther(rewardPerMine);
-      
+
       // Step 1: Deploy the Faucet contract
       let deploymentBytecode: `0x${string}`;
       try {
@@ -124,7 +125,9 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
 
       // Deploy contract - wagmi will use the current chain from the wallet
       deployContract({
+        abi: FAUCET_ABI,
         bytecode: deploymentBytecode,
+        args: [rewardWei],
       });
     } catch (error: any) {
       console.error('Error deploying faucet:', error);
@@ -143,17 +146,17 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
       const contractAddress = deployReceipt.contractAddress;
       setDeployedContractAddress(contractAddress);
       setShowContractInfo(true); // Show contract info
-      
+
       // Step 2: Fund the deployed contract
       const fundingWei = parseEther(fundingAmount);
-      
+
       // Send funds to the contract (it will accept via receive() function)
       // This is a simple value transfer, not a contract call
       if (!fundContract) {
         console.error('Fund contract function not available');
         return;
       }
-      
+
       fundContract({
         to: contractAddress,
         value: fundingWei,
@@ -185,29 +188,29 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
           } catch (parseError) {
             throw new Error(`Failed to parse response: ${parseError}`);
           }
-          
+
           if (!res.ok) {
             throw new Error(data?.error || `HTTP ${res.status}: ${res.statusText}`);
           }
-          
+
           if (data?.error) {
             throw new Error(data.error);
           }
-          
+
           if (!data) {
             throw new Error('Empty response from server');
           }
-          
+
           return data;
         })
         .then((data) => {
           console.log('Faucet added to database:', data);
-          
+
           // Validate response data
           if (!data || !data.data) {
             throw new Error('Invalid response from server: missing data');
           }
-          
+
           // Refresh faucets list (with error handling)
           try {
             queryClient.invalidateQueries({ queryKey: ['faucets'] });
@@ -216,7 +219,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
             console.error('Error invalidating queries:', queryError);
             // Continue anyway
           }
-          
+
           // Reset form
           setFaucetName('');
           setFundingAmount('0.1');
@@ -235,7 +238,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
             name: error.name,
             cause: error.cause,
           });
-          
+
           showToast('Add to DB on SupaBase', 'warning', 4000);
           setIsSubmitting(false);
           // Keep contract info visible so user can manually add
