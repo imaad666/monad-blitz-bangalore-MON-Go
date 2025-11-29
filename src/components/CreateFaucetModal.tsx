@@ -6,6 +6,7 @@ import { parseEther, formatEther } from 'viem';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { getFaucetDeploymentBytecode } from '@/lib/deployFaucet';
+import { showToast } from '@/lib/toast';
 
 const MONAD_TESTNET_CHAIN_ID = 10143;
 
@@ -224,7 +225,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
           setShowContractInfo(false);
           setIsSubmitting(false);
           onClose();
-          alert('Faucet created and funded successfully!');
+          showToast('Faucet created and funded successfully!', 'success');
         })
         .catch((error) => {
           console.error('Error adding faucet to database:', error);
@@ -235,13 +236,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
             cause: error.cause,
           });
           
-          const errorMessage = error.message || 'Unknown error';
-          alert(
-            `Faucet deployed and funded, but failed to add to database:\n\n${errorMessage}\n\n` +
-            `Contract Address: ${deployedContractAddress}\n\n` +
-            `You can manually add this faucet to the database with the contract address above.\n\n` +
-            `Check the browser console for more details.`
-          );
+          showToast('Add to DB on SupaBase', 'warning', 4000);
           setIsSubmitting(false);
           // Keep contract info visible so user can manually add
           setShowContractInfo(true);
