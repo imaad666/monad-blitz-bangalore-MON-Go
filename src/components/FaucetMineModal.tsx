@@ -120,8 +120,8 @@ export default function FaucetMineModal({
             setPendingAmount(data.pending_amount);
           }
         })
-        .catch((error) => {
-          console.error('Error fetching pending amount:', error);
+        .catch(() => {
+          // Silently ignore
         });
     } else {
       setPendingAmount(0);
@@ -159,42 +159,36 @@ export default function FaucetMineModal({
                 });
                 if (decoded.eventName === 'Claimed') {
                   actualClaimedAmount = Number(formatEther(decoded.args.amount as bigint));
-                  console.log('Found Claimed event:', { amount: actualClaimedAmount, claimer: decoded.args.claimer });
                   break;
                 }
               } catch (e) {
                 // Not the Claimed event, continue
               }
             }
-          } catch (error) {
-            console.error('Error reading transaction receipt:', error);
+          } catch {
+            // Ignore receipt parsing errors
           }
 
           // Fallback to pending amount from DB if we couldn't read from receipt
           // IMPORTANT: If event shows 0, use the pending amount from DB (the amount we tried to claim)
           if (actualClaimedAmount === 0) {
-            console.warn('⚠️ Claimed event shows 0, fetching pending amount from DB as fallback');
+            console.debug('⚠️ Claimed event shows 0, fetching pending amount from DB as fallback');
             const pendingResponse = await fetch(`/api/game/faucets/pending?faucet_id=${faucet.id}&user_address=${address}`);
             const pendingData = await pendingResponse.json();
             if (pendingData.success && pendingData.pending_amount) {
               actualClaimedAmount = Number(pendingData.pending_amount);
-              console.log('✅ Using pending amount from DB:', actualClaimedAmount);
+              console.debug('✅ Using pending amount from DB:', actualClaimedAmount);
             } else {
               // Last resort: use state value
               actualClaimedAmount = pendingAmount;
-              console.warn('⚠️ Using pending amount from state:', actualClaimedAmount);
+              console.debug('⚠️ Using pending amount from state:', actualClaimedAmount);
             }
           }
 
-          console.log('Processing claim:', {
-            actualClaimedAmount,
-            pendingAmount,
-            claimHash,
-            fromReceipt: actualClaimedAmount > 0
-          });
+          // Removed detailed console output
 
           if (actualClaimedAmount <= 0) {
-            console.warn('Claim succeeded but no amount found in receipt or DB');
+            console.debug('Claim succeeded but no amount found in receipt or DB');
             alert('⚠️ Claim transaction succeeded but no amount was found. Please check your wallet balance.');
             // Still sync and refresh
             queryClient.invalidateQueries({ queryKey: ['faucets'] });
@@ -222,46 +216,28 @@ export default function FaucetMineModal({
           const claimData = await claimResponse.json();
 
           if (claimData.error) {
-            console.error('Error recording claim:', claimData.error);
             alert('Claim succeeded on-chain but failed to update database: ' + claimData.error);
-          } else {
-            console.log('Claim recorded successfully:', claimData);
           }
 
           // Step 2: Clear pending claim from DB
-          try {
-            await fetch('/api/game/faucets/mine', {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                faucet_id: faucet.id,
-                user_address: address,
-              }),
-            });
-          } catch (error) {
-            console.error('Error clearing pending claim:', error);
-          }
+          await fetch('/api/game/faucets/mine', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              faucet_id: faucet.id,
+              user_address: address,
+            }),
+          }).catch(() => {});
 
           // Step 3: Sync contract balance with database (updates remaining_coins based on actual contract balance)
-          try {
-            const syncResponse = await fetch('/api/game/faucets/sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                faucet_id: faucet.id,
-                contract_address: faucet.contract_address,
-              }),
-            });
-
-            const syncData = await syncResponse.json();
-            if (syncData.error) {
-              console.error('Error syncing faucet:', syncData.error);
-            } else {
-              console.log('Faucet synced successfully:', syncData);
-            }
-          } catch (error) {
-            console.error('Error syncing faucet:', error);
-          }
+          await fetch('/api/game/faucets/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              faucet_id: faucet.id,
+              contract_address: faucet.contract_address,
+            }),
+          }).catch(() => {});
 
           // Refresh all queries
           queryClient.invalidateQueries({ queryKey: ['faucets'] });
@@ -274,7 +250,6 @@ export default function FaucetMineModal({
           // Show success message
           alert(`✅ Successfully claimed ${actualClaimedAmount.toFixed(4)} MON!`);
         } catch (error) {
-          console.error('Error processing claim:', error);
           alert('Claim succeeded on-chain but error processing: ' + (error as Error).message);
           // Still refresh queries
           queryClient.invalidateQueries({ queryKey: ['faucets'] });

@@ -130,7 +130,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
         args: [rewardWei],
       });
     } catch (error: any) {
-      console.error('Error deploying faucet:', error);
+      console.debug('Error deploying faucet:', error);
       if (error?.message?.includes('chain') || error?.message?.includes('network')) {
         alert('Network error: Please ensure you are connected to Monad Testnet (Chain ID: 10143) in your wallet.');
       } else {
@@ -153,7 +153,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
       // Send funds to the contract (it will accept via receive() function)
       // This is a simple value transfer, not a contract call
       if (!fundContract) {
-        console.error('Fund contract function not available');
+        console.debug('Fund contract function not available');
         return;
       }
 
@@ -204,7 +204,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
           return data;
         })
         .then((data) => {
-          console.log('Faucet added to database:', data);
+          console.debug('Faucet added to database:', data);
 
           // Validate response data
           if (!data || !data.data) {
@@ -216,7 +216,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
             queryClient.invalidateQueries({ queryKey: ['faucets'] });
             queryClient.invalidateQueries({ queryKey: ['admin-faucets'] });
           } catch (queryError) {
-            console.error('Error invalidating queries:', queryError);
+            console.debug('Error invalidating queries:', queryError);
             // Continue anyway
           }
 
@@ -231,9 +231,9 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
           showToast('Faucet created and funded successfully!', 'success');
         })
         .catch((error) => {
-          console.error('Error adding faucet to database:', error);
-          console.error('Error stack:', error.stack);
-          console.error('Error details:', {
+          console.debug('Error adding faucet to database:', error);
+          console.debug('Error stack:', error.stack);
+          console.debug('Error details:', {
             message: error.message,
             name: error.name,
             cause: error.cause,
