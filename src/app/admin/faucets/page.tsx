@@ -16,6 +16,12 @@ interface Faucet {
   created_at: string;
 }
 
+const formatAddress = (addr: string | null | undefined) => {
+  if (!addr) return 'Not set';
+  if (!addr.startsWith('0x') || addr.length < 10) return addr;
+  return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+};
+
 export default function AdminFaucetsPage() {
   const { address } = useAccount();
   const queryClient = useQueryClient();
@@ -102,11 +108,6 @@ export default function AdminFaucetsPage() {
     } catch (error: any) {
       alert('Error: ' + error.message);
     }
-  };
-
-  const formatAddress = (addr: string | null) => {
-    if (!addr) return 'Not set';
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
   if (isLoading) {

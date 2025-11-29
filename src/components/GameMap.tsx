@@ -182,18 +182,18 @@ export default function GameMap() {
         params.append('lng', userLocation.lng.toString());
         params.append('radius', '10'); // 10km radius
       }
-      
+
       const response = await fetch(`/api/game/faucets?${params.toString()}`);
       if (!response.ok) {
         throw new Error('Failed to fetch faucets');
       }
       const data = await response.json();
-      
+
       // Ensure faucets is always an array
       if (!data || !data.faucets) {
         return { faucets: [] };
       }
-      
+
       return {
         faucets: Array.isArray(data.faucets) ? data.faucets : [],
       };
@@ -339,7 +339,7 @@ export default function GameMap() {
           title={`${faucet.name} - ${faucet.remaining_coins}/${faucet.total_coins} coins remaining`}
         />
       ))}
-      
+
       {/* Mining Modal */}
       <FaucetMineModal
         isOpen={isMineModalOpen}

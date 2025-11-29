@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from 'wagmi';
-import { formatEther, parseEther } from 'viem';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract, usePublicClient } from 'wagmi';
+import { formatEther, parseEther, decodeEventLog } from 'viem';
 import { FAUCET_ABI } from '@/lib/contracts';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -55,6 +55,7 @@ export default function FaucetMineModal({
 }: FaucetMineModalProps) {
   const { address, isConnected } = useAccount();
   const queryClient = useQueryClient();
+  const publicClient = usePublicClient();
   const [distance, setDistance] = useState<number | null>(null);
   const [isWithinRadius, setIsWithinRadius] = useState(false);
   const [pendingAmount, setPendingAmount] = useState<number>(0); // Pending claim amount in MON
@@ -74,21 +75,21 @@ export default function FaucetMineModal({
   });
 
   // Read faucet balance
-  const { 
-    data: faucetBalance, 
+  const {
+    data: faucetBalance,
     error: balanceError,
-    isLoading: isLoadingBalance 
+    isLoading: isLoadingBalance
   } = useReadContract({
-    address: (faucet?.contract_address && faucet.contract_address.startsWith('0x') && faucet.contract_address.length === 42) 
-      ? (faucet.contract_address as `0x${string}`) 
+    address: (faucet?.contract_address && faucet.contract_address.startsWith('0x') && faucet.contract_address.length === 42)
+      ? (faucet.contract_address as `0x${string}`)
       : undefined,
     abi: FAUCET_ABI,
     functionName: 'getBalance',
-    enabled: !!faucet?.contract_address && 
-             !!faucet.contract_address.startsWith('0x') && 
-             faucet.contract_address.length === 42 && 
-             isOpen,
     query: {
+      enabled: !!faucet?.contract_address &&
+        !!faucet.contract_address.startsWith('0x') &&
+        faucet.contract_address.length === 42 &&
+        isOpen,
       refetchInterval: 5000,
       retry: 3,
     },
@@ -96,32 +97,16 @@ export default function FaucetMineModal({
 
   // Read mine amount
   const { data: mineAmount } = useReadContract({
-    address: (faucet?.contract_address && faucet.contract_address.startsWith('0x') && faucet.contract_address.length === 42) 
-      ? (faucet.contract_address as `0x${string}`) 
+    address: (faucet?.contract_address && faucet.contract_address.startsWith('0x') && faucet.contract_address.length === 42)
+      ? (faucet.contract_address as `0x${string}`)
       : undefined,
     abi: FAUCET_ABI,
     functionName: 'MINE_AMOUNT',
-    enabled: !!faucet?.contract_address && 
-             !!faucet.contract_address.startsWith('0x') && 
-             faucet.contract_address.length === 42 && 
-             isOpen,
-  });
-
-  // Read if user can claim (cooldown check)
-  const { data: canClaim } = useReadContract({
-    address: (faucet?.contract_address && faucet.contract_address.startsWith('0x') && faucet.contract_address.length === 42) 
-      ? (faucet.contract_address as `0x${string}`) 
-      : undefined,
-    abi: FAUCET_ABI,
-    functionName: 'canClaim',
-    args: address ? [address] : undefined,
-    enabled: !!faucet?.contract_address && 
-             !!faucet.contract_address.startsWith('0x') && 
-             faucet.contract_address.length === 42 && 
-             !!address && 
-             isOpen,
     query: {
-      refetchInterval: 5000,
+      enabled: !!faucet?.contract_address &&
+        !!faucet.contract_address.startsWith('0x') &&
+        faucet.contract_address.length === 42 &&
+        isOpen,
     },
   });
 
@@ -156,69 +141,151 @@ export default function FaucetMineModal({
 
   // Handle successful claim - sync with database and update user stats
   useEffect(() => {
-    if (isClaimSuccess && claimHash && faucet?.id && address && pendingAmount > 0) {
-      // Clear pending amount
-      const claimedAmount = pendingAmount;
-      setPendingAmount(0);
-      
-      // Step 1: Record the claim in database (updates user stats and leaderboard)
-      fetch('/api/game/faucets/claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          faucet_id: faucet.id,
-          user_address: address,
-          claimed_amount: claimedAmount,
-        }),
-      })
-        .then((res) => res.json())
-        .then((claimData) => {
-          if (claimData.error) {
-            console.error('Error recording claim:', claimData.error);
+    if (isClaimSuccess && claimHash && faucet?.id && address && publicClient) {
+      // Fetch the actual claimed amount from the transaction receipt
+      const processClaim = async () => {
+        try {
+          // Read the transaction receipt to get the actual claimed amount from the Claimed event
+          let actualClaimedAmount = 0;
+          try {
+            const receipt = await publicClient.getTransactionReceipt({ hash: claimHash });
+            // Find the Claimed event in the logs
+            for (const log of receipt.logs) {
+              try {
+                const decoded = decodeEventLog({
+                  abi: FAUCET_ABI,
+                  data: log.data,
+                  topics: log.topics,
+                });
+                if (decoded.eventName === 'Claimed') {
+                  actualClaimedAmount = Number(formatEther(decoded.args.amount as bigint));
+                  console.log('Found Claimed event:', { amount: actualClaimedAmount, claimer: decoded.args.claimer });
+                  break;
+                }
+              } catch (e) {
+                // Not the Claimed event, continue
+              }
+            }
+          } catch (error) {
+            console.error('Error reading transaction receipt:', error);
           }
-          
-          // Step 2: Sync contract balance with database
-          return fetch('/api/game/faucets/sync', {
+
+          // Fallback to pending amount from DB if we couldn't read from receipt
+          // IMPORTANT: If event shows 0, use the pending amount from DB (the amount we tried to claim)
+          if (actualClaimedAmount === 0) {
+            console.warn('⚠️ Claimed event shows 0, fetching pending amount from DB as fallback');
+            const pendingResponse = await fetch(`/api/game/faucets/pending?faucet_id=${faucet.id}&user_address=${address}`);
+            const pendingData = await pendingResponse.json();
+            if (pendingData.success && pendingData.pending_amount) {
+              actualClaimedAmount = Number(pendingData.pending_amount);
+              console.log('✅ Using pending amount from DB:', actualClaimedAmount);
+            } else {
+              // Last resort: use state value
+              actualClaimedAmount = pendingAmount;
+              console.warn('⚠️ Using pending amount from state:', actualClaimedAmount);
+            }
+          }
+
+          console.log('Processing claim:', {
+            actualClaimedAmount,
+            pendingAmount,
+            claimHash,
+            fromReceipt: actualClaimedAmount > 0
+          });
+
+          if (actualClaimedAmount <= 0) {
+            console.warn('Claim succeeded but no amount found in receipt or DB');
+            alert('⚠️ Claim transaction succeeded but no amount was found. Please check your wallet balance.');
+            // Still sync and refresh
+            queryClient.invalidateQueries({ queryKey: ['faucets'] });
+            queryClient.invalidateQueries({ queryKey: ['userData', address] });
+            queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
+            setPendingAmount(0);
+            return;
+          }
+
+          // Clear pending amount in state
+          setPendingAmount(0);
+
+          // Step 1: Record the claim in database (updates user stats, faucet remaining_coins, and leaderboard)
+          const claimResponse = await fetch('/api/game/faucets/claim', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               faucet_id: faucet.id,
-              contract_address: faucet.contract_address,
+              user_address: address,
+              claimed_amount: actualClaimedAmount,
             }),
           });
-        })
-        .then((res) => res.json())
-        .then((syncData) => {
-          if (syncData.error) {
-            console.error('Error syncing faucet:', syncData.error);
+
+          const claimData = await claimResponse.json();
+
+          if (claimData.error) {
+            console.error('Error recording claim:', claimData.error);
+            alert('Claim succeeded on-chain but failed to update database: ' + claimData.error);
+          } else {
+            console.log('Claim recorded successfully:', claimData);
           }
-          
-          // Clear pending claim from DB
-          fetch('/api/game/faucets/mine', {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              faucet_id: faucet.id,
-              user_address: address,
-            }),
-          }).catch(console.error);
-          
-          // Refresh queries
+
+          // Step 2: Clear pending claim from DB
+          try {
+            await fetch('/api/game/faucets/mine', {
+              method: 'DELETE',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                faucet_id: faucet.id,
+                user_address: address,
+              }),
+            });
+          } catch (error) {
+            console.error('Error clearing pending claim:', error);
+          }
+
+          // Step 3: Sync contract balance with database (updates remaining_coins based on actual contract balance)
+          try {
+            const syncResponse = await fetch('/api/game/faucets/sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                faucet_id: faucet.id,
+                contract_address: faucet.contract_address,
+              }),
+            });
+
+            const syncData = await syncResponse.json();
+            if (syncData.error) {
+              console.error('Error syncing faucet:', syncData.error);
+            } else {
+              console.log('Faucet synced successfully:', syncData);
+            }
+          } catch (error) {
+            console.error('Error syncing faucet:', error);
+          }
+
+          // Refresh all queries
           queryClient.invalidateQueries({ queryKey: ['faucets'] });
           queryClient.invalidateQueries({ queryKey: ['userData', address] });
           queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
+          queryClient.invalidateQueries({ queryKey: ['pending', faucet.id, address] });
+
           onMineSuccess();
-        })
-        .catch((error) => {
-          console.error('Error syncing faucet:', error);
-          // Still refresh queries even if sync fails
+
+          // Show success message
+          alert(`✅ Successfully claimed ${actualClaimedAmount.toFixed(4)} MON!`);
+        } catch (error) {
+          console.error('Error processing claim:', error);
+          alert('Claim succeeded on-chain but error processing: ' + (error as Error).message);
+          // Still refresh queries
           queryClient.invalidateQueries({ queryKey: ['faucets'] });
           queryClient.invalidateQueries({ queryKey: ['userData', address] });
           queryClient.invalidateQueries({ queryKey: ['leaderboard'] });
-          onMineSuccess();
-        });
+          setPendingAmount(0);
+        }
+      };
+
+      processClaim();
     }
-  }, [isClaimSuccess, claimHash, faucet, address, pendingAmount, queryClient, onMineSuccess]);
+  }, [isClaimSuccess, claimHash, faucet?.id, faucet?.contract_address, address, queryClient, onMineSuccess, publicClient]);
 
   // Handle mine button click - increments pending amount and updates DB immediately
   const handleMine = async () => {
@@ -238,15 +305,15 @@ export default function FaucetMineModal({
     // formatEther works with any 18-decimal token (MON has 18 decimals)
     const balanceMON = faucetBalance ? Number(formatEther(faucetBalance as bigint)) : 0;
     const mineAmountMON = mineAmount ? Number(formatEther(mineAmount as bigint)) : 0.001;
-    
+
     // Calculate DB balance: remaining_coins * mine_amount = total MON available
     // DB is the source of truth for available mines
     const dbBalanceMON = (faucet.remaining_coins || 0) * mineAmountMON;
-    
+
     // ALWAYS use DB balance for mining checks - DB is the source of truth
     // Contract balance will be checked when claiming (on-chain transaction)
     const effectiveBalance = dbBalanceMON;
-    
+
     // Log for debugging
     console.log('Mining check:', {
       contractBalanceMON: balanceMON,
@@ -259,7 +326,7 @@ export default function FaucetMineModal({
       contractAddress: faucet.contract_address,
       usingDbBalance: true, // Always using DB for mining
     });
-    
+
     // Check if faucet has enough balance (based on DB)
     if (effectiveBalance < mineAmountMON || !faucet.remaining_coins || faucet.remaining_coins <= 0) {
       alert(
@@ -271,7 +338,7 @@ export default function FaucetMineModal({
       );
       return;
     }
-    
+
     // Warn user if contract balance is 0 but DB shows coins (contract needs funding for claiming)
     if (balanceMON === 0 && dbBalanceMON > 0) {
       console.warn(
@@ -279,7 +346,7 @@ export default function FaucetMineModal({
         `Mining will work, but claiming will fail until contract is funded at: ${faucet.contract_address}`
       );
     }
-    
+
     // Check if adding this mine would exceed faucet balance
     if (pendingAmount + mineAmountMON > effectiveBalance) {
       alert(
@@ -303,7 +370,7 @@ export default function FaucetMineModal({
       });
 
       const data = await response.json();
-      
+
       if (data.error) {
         alert('Error: ' + data.error);
         setIsMining(false);
@@ -312,11 +379,11 @@ export default function FaucetMineModal({
 
       // Update local state
       setPendingAmount(data.pending_amount);
-      
+
       // Refresh queries
       queryClient.invalidateQueries({ queryKey: ['faucets'] });
       queryClient.invalidateQueries({ queryKey: ['userData', address] });
-      
+
     } catch (error: any) {
       console.error('Error mining:', error);
       alert('Error: ' + (error.message || 'Failed to mine'));
@@ -326,47 +393,99 @@ export default function FaucetMineModal({
   };
 
   // Handle claim button click - claims accumulated amount from contract
-  const handleClaim = () => {
-    if (!faucet?.contract_address || !address || pendingAmount <= 0) {
+  const handleClaim = async () => {
+    if (!faucet?.contract_address || !address) {
       return;
     }
 
-    if (!canClaim) {
-      alert('Cannot claim right now. Please wait for the cooldown period to pass.');
+    // Fetch latest pending amount from database to ensure we have the correct value
+    // CRITICAL: Always fetch from DB, don't rely on state
+    let latestPendingAmount = 0;
+    try {
+      const response = await fetch(`/api/game/faucets/pending?faucet_id=${faucet.id}&user_address=${address}`);
+      const data = await response.json();
+      console.log('🔍 Fetched pending amount from DB:', data);
+
+      if (data.success) {
+        const dbAmount = data.pending_amount;
+        if (dbAmount !== undefined && dbAmount !== null && dbAmount !== '') {
+          latestPendingAmount = Number(dbAmount);
+          console.log('✅ Using pending amount from DB:', latestPendingAmount);
+          setPendingAmount(latestPendingAmount); // Update state with latest value
+        } else {
+          console.warn('⚠️ DB returned null/undefined/empty pending_amount:', dbAmount);
+          latestPendingAmount = 0;
+        }
+      } else {
+        console.error('❌ DB fetch failed:', data.error || 'Unknown error');
+        latestPendingAmount = 0;
+      }
+    } catch (error) {
+      console.error('❌ Error fetching pending amount:', error);
+      latestPendingAmount = 0;
+    }
+
+    console.log('📊 Pending amount summary:', {
+      fromState: pendingAmount,
+      fromDB: latestPendingAmount,
+      final: latestPendingAmount,
+      willProceed: latestPendingAmount > 0,
+    });
+
+    // Validate pending amount - CRITICAL: Don't allow claiming 0
+    if (latestPendingAmount <= 0) {
+      alert(
+        `❌ No pending amount to claim!\n\n` +
+        `Pending amount from DB: ${latestPendingAmount}\n` +
+        `Pending amount from state: ${pendingAmount}\n\n` +
+        `Please mine first to accumulate tokens before claiming.`
+      );
+      console.error('Claim blocked: pending amount is 0', {
+        latestPendingAmount,
+        pendingAmount,
+        faucetId: faucet.id,
+        userAddress: address,
+      });
+      return;
+    }
+
+    // Double-check: if amount is still 0 after validation, block
+    if (latestPendingAmount <= 0 || isNaN(latestPendingAmount)) {
+      alert('Invalid pending amount. Please refresh and try again.');
       return;
     }
 
     // Get contract balance (for display/warning only)
     // formatEther works with any 18-decimal token (MON has 18 decimals)
     const balanceMON = faucetBalance ? Number(formatEther(faucetBalance as bigint)) : 0;
-    
+
     // Calculate DB balance: remaining_coins * mine_amount = total MON available
     // DB is the source of truth for available mines
     const mineAmountMON = mineAmount ? Number(formatEther(mineAmount as bigint)) : 0.001;
     const dbBalanceMON = (faucet.remaining_coins || 0) * mineAmountMON;
-    
+
     console.log('Claim check:', {
       contractBalanceMON: balanceMON,
       dbBalanceMON: dbBalanceMON,
-      pendingAmount,
+      pendingAmount: latestPendingAmount,
       remaining_coins: faucet.remaining_coins,
       contractAddress: faucet.contract_address,
-      canProceed: dbBalanceMON >= pendingAmount,
+      canProceed: dbBalanceMON >= latestPendingAmount,
     });
-    
+
     // ALWAYS use DB balance as source of truth for claim checks
     // Only block if DB shows insufficient balance
-    if (dbBalanceMON < pendingAmount) {
+    if (dbBalanceMON < latestPendingAmount) {
       alert(
         `❌ Insufficient balance to claim.\n\n` +
-        `Pending: ${pendingAmount.toFixed(4)} MON\n` +
+        `Pending: ${latestPendingAmount.toFixed(4)} MON\n` +
         `Available (DB): ${dbBalanceMON.toFixed(4)} MON (${faucet.remaining_coins} coins)\n` +
         `Contract balance: ${balanceMON.toFixed(4)} MON (for reference)\n\n` +
         `Please mine more or wait for the faucet to be funded.`
       );
       return;
     }
-    
+
     // Warn if contract balance is 0 but DB shows coins available
     // Still allow claim - blockchain will reject if contract truly has no funds
     if (balanceMON === 0 && dbBalanceMON > 0) {
@@ -381,16 +500,16 @@ export default function FaucetMineModal({
         `Contract: ${faucet.contract_address}\n\n` +
         `To fund the contract, send MON to the address above on Monad Testnet.`
       );
-      
+
       if (!proceed) {
         return;
       }
     }
 
     // Validate contract address before calling
-    if (!faucet.contract_address || 
-        !faucet.contract_address.startsWith('0x') || 
-        faucet.contract_address.length !== 42) {
+    if (!faucet.contract_address ||
+      !faucet.contract_address.startsWith('0x') ||
+      faucet.contract_address.length !== 42) {
       alert('Invalid contract address');
       return;
     }
@@ -401,12 +520,51 @@ export default function FaucetMineModal({
       return;
     }
 
+    // Convert to wei and validate - CRITICAL: Must be > 0
+    // Ensure latestPendingAmount is a valid positive number
+    const numericPendingAmount = Number(latestPendingAmount);
+    if (isNaN(numericPendingAmount) || numericPendingAmount <= 0) {
+      alert(
+        `❌ Invalid pending amount: ${latestPendingAmount}\n\n` +
+        `Please mine some tokens first, then try claiming again.\n\n` +
+        `Check the browser console for more details.`
+      );
+      console.error('Claim blocked: Invalid pending amount', {
+        latestPendingAmount,
+        numericPendingAmount,
+        isNaN: isNaN(numericPendingAmount),
+        faucetId: faucet.id,
+        userAddress: address,
+      });
+      return;
+    }
+
+    const claimAmountWei = parseEther(numericPendingAmount.toString());
+
+    // Final validation: ensure wei amount is > 0
+    if (claimAmountWei === BigInt(0) || claimAmountWei < BigInt(0)) {
+      alert('❌ Error: Claim amount is 0 or negative. Cannot proceed with claim.');
+      console.error('Claim blocked: claimAmountWei is invalid', {
+        latestPendingAmount: numericPendingAmount,
+        claimAmountWei: claimAmountWei.toString(),
+      });
+      return;
+    }
+
+    console.log('✅ Claiming with amount:', {
+      pendingAmountMON: numericPendingAmount,
+      claimAmountWei: claimAmountWei.toString(),
+      claimAmountMON: (Number(claimAmountWei) / 1e18).toFixed(6),
+      faucetId: faucet.id,
+      userAddress: address,
+    });
+
     // Proceed with claim - blockchain will reject if contract has no funds
     claimContract({
       address: faucet.contract_address as `0x${string}`,
       abi: FAUCET_ABI,
       functionName: 'claim',
-      args: [parseEther(pendingAmount.toString())],
+      args: [claimAmountWei],
     });
   };
 
@@ -581,8 +739,8 @@ export default function FaucetMineModal({
                   </>
                 ) : (
                   <>
-                  <span>⛏️</span>
-                  Mine {mineAmountMON.toFixed(4)} MON
+                    <span>⛏️</span>
+                    Mine {mineAmountMON.toFixed(4)} MON
                   </>
                 )}
               </button>
@@ -591,7 +749,7 @@ export default function FaucetMineModal({
               {pendingAmount > 0 && (
                 <button
                   onClick={handleClaim}
-                  disabled={!canClaim || isClaiming || isConfirmingClaim || !address}
+                  disabled={isClaiming || isConfirmingClaim || !address}
                   className="w-full mt-3 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-4 py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
                 >
                   {isClaiming || isConfirmingClaim ? (
@@ -606,13 +764,6 @@ export default function FaucetMineModal({
                     </>
                   )}
                 </button>
-              )}
-
-              {/* Cooldown Info */}
-              {!canClaim && pendingAmount > 0 && (
-                <div className="mt-3 p-3 bg-blue-900/50 border border-blue-500 rounded-lg text-sm text-blue-200">
-                  ⏱️ Cooldown active. You can claim after 60 seconds from your last claim.
-                </div>
               )}
             </>
           ) : (

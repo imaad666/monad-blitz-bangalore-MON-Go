@@ -1,5 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase-server';
+import { createPublicClient, http, formatEther } from 'viem';
+import { defineChain } from 'viem';
+import { FAUCET_ABI } from '@/lib/contracts';
+
+// Monad Testnet configuration
+const monadTestnet = defineChain({
+  id: 10143,
+  name: 'Monad Testnet',
+  nativeCurrency: {
+    decimals: 18,
+    name: 'Monad',
+    symbol: 'MON',
+  },
+  rpcUrls: {
+    default: {
+      http: ['https://testnet-rpc.monad.xyz'],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: 'Monad Explorer',
+      url: 'https://testnet-explorer.monad.xyz',
+    },
+  },
+  testnet: true,
+});
+
+const publicClient = createPublicClient({
+  chain: monadTestnet,
+  transport: http(),
+});
 
 /**
  * POST /api/game/faucets/claim
@@ -52,6 +83,39 @@ export async function POST(request: NextRequest) {
     const currentCollected = userData?.total_collected || 0;
     const currentMines = userData?.total_mines || 0;
 
+    // Get faucet info to calculate coins to deduct
+    const { data: faucetData, error: faucetError } = await supabaseServer
+      .from('faucets')
+      .select('remaining_coins, total_coins, contract_address')
+      .eq('id', faucet_id)
+      .single();
+
+    if (faucetError) {
+      return NextResponse.json(
+        { error: `Failed to fetch faucet: ${faucetError.message}` },
+        { status: 500 }
+      );
+    }
+
+    // Get MINE_AMOUNT from contract to calculate coins
+    let mineAmountMON = 0.001; // Default fallback
+    if (faucetData?.contract_address && faucetData.contract_address.match(/^0x[a-fA-F0-9]{40}$/)) {
+      try {
+        const mineAmountWei = await publicClient.readContract({
+          address: faucetData.contract_address as `0x${string}`,
+          abi: FAUCET_ABI,
+          functionName: 'MINE_AMOUNT',
+        }) as bigint;
+        mineAmountMON = Number(formatEther(mineAmountWei));
+      } catch (error) {
+        console.error('Failed to read MINE_AMOUNT from contract, using default:', error);
+      }
+    }
+
+    // Calculate how many coins were claimed (claimed_amount / mine_amount)
+    const coinsClaimed = Math.ceil(claimed_amount / mineAmountMON);
+    const newRemainingCoins = Math.max(0, (faucetData?.remaining_coins || 0) - coinsClaimed);
+
     // Update user stats
     const { error: updateError } = await supabaseServer
       .from('users')
@@ -67,6 +131,21 @@ export async function POST(request: NextRequest) {
         { error: `Failed to update user stats: ${updateError.message}` },
         { status: 500 }
       );
+    }
+
+    // Update faucet remaining_coins
+    const { error: faucetUpdateError } = await supabaseServer
+      .from('faucets')
+      .update({
+        remaining_coins: newRemainingCoins,
+        is_active: newRemainingCoins > 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', faucet_id);
+
+    if (faucetUpdateError) {
+      console.error('Failed to update faucet remaining_coins:', faucetUpdateError);
+      // Don't fail the whole request, but log the error
     }
 
     // Also record in claims table if it exists (for history)
@@ -88,6 +167,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       claimed_amount,
+      coins_claimed: coinsClaimed,
+      remaining_coins: newRemainingCoins,
       user_stats: {
         total_collected: currentCollected + claimed_amount,
         total_mines: currentMines + 1,

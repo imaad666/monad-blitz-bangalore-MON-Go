@@ -1,12 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useDeployContract, useWaitForTransactionReceipt, useChainId, useWriteContract, useSwitchChain } from 'wagmi';
+import { useAccount, useDeployContract, useWaitForTransactionReceipt, useChainId, useSendTransaction, useSwitchChain } from 'wagmi';
 import { parseEther, formatEther } from 'viem';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
 import { getFaucetDeploymentBytecode } from '@/lib/deployFaucet';
-import { FAUCET_ABI } from '@/lib/contracts';
 
 const MONAD_TESTNET_CHAIN_ID = 10143;
 
@@ -46,13 +45,13 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
     hash: deployHash,
   });
 
-  // Write contract hook for funding the deployed contract
+  // Send transaction hook for funding the deployed contract (simple value transfer)
   const {
     data: fundHash,
-    writeContract: fundContract,
+    sendTransaction: fundContract,
     isPending: isFunding,
     error: fundError,
-  } = useWriteContract();
+  } = useSendTransaction();
 
   // Wait for funding transaction
   const { isLoading: isConfirmingFund, isSuccess: isFundSuccess } = useWaitForTransactionReceipt({
@@ -148,6 +147,12 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
       const fundingWei = parseEther(fundingAmount);
       
       // Send funds to the contract (it will accept via receive() function)
+      // This is a simple value transfer, not a contract call
+      if (!fundContract) {
+        console.error('Fund contract function not available');
+        return;
+      }
+      
       fundContract({
         to: contractAddress,
         value: fundingWei,

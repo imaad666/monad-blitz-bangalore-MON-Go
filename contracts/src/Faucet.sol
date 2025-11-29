@@ -21,12 +21,6 @@ contract Faucet {
     // Total amount mined from the faucet
     uint256 public totalMined;
     
-    // Mapping to track last claim time per address (for cooldown)
-    mapping(address => uint256) public lastClaimTime;
-    
-    // Cooldown period in seconds (60 seconds default)
-    uint256 public constant COOLDOWN_PERIOD = 60;
-    
     // Events
     event Deposited(address indexed depositor, uint256 amount);
     event Claimed(address indexed claimer, uint256 amount);
@@ -75,22 +69,6 @@ contract Faucet {
     }
     
     /**
-     * @notice Check if an address can claim (has enough balance and cooldown passed)
-     * @param claimer The address to check
-     * @return true if the claimer can claim, false otherwise
-     */
-    function canClaim(address claimer) external view returns (bool) {
-        // Check cooldown
-        if (lastClaimTime[claimer] > 0) {
-            if (block.timestamp < lastClaimTime[claimer] + COOLDOWN_PERIOD) {
-                return false;
-            }
-        }
-        
-        return true;
-    }
-    
-    /**
      * @notice Claim accumulated tokens from the faucet
      * @param amount The amount of tokens to claim (in wei)
      * @dev Transfers the claimed amount to the caller if conditions are met
@@ -103,17 +81,6 @@ contract Faucet {
         // Check if faucet has enough balance
         require(address(this).balance >= amount, "Faucet has insufficient balance");
         require(amount > 0, "Amount must be greater than 0");
-        
-        // Check cooldown
-        if (lastClaimTime[msg.sender] > 0) {
-            require(
-                block.timestamp >= lastClaimTime[msg.sender] + COOLDOWN_PERIOD,
-                "Cooldown period not passed"
-            );
-        }
-        
-        // Update last claim time (cooldown starts after claiming)
-        lastClaimTime[msg.sender] = block.timestamp;
         
         // Update totals
         totalMined += amount;
