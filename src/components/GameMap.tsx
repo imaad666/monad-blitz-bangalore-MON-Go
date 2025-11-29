@@ -101,7 +101,7 @@ const lootIcon = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
 
 // Player avatar icon - use the PNG directly so the exact image shows as the dot
 const playerIcon: string = (avatarImg as unknown as { src: string }).src;
-const PLAYER_ICON_RENDER_SIZE = 36; // slightly larger than the previous 32px marker
+const PLAYER_ICON_RENDER_SIZE = 32; // match previous default marker size
 
 interface Faucet {
   id: string;
@@ -127,6 +127,7 @@ export default function GameMap() {
     if (typeof window === 'undefined' || !(window as any).google) return playerIcon;
     return {
       url: playerIcon,
+      size: new window.google.maps.Size(PLAYER_ICON_RENDER_SIZE, PLAYER_ICON_RENDER_SIZE),
       scaledSize: new window.google.maps.Size(PLAYER_ICON_RENDER_SIZE, PLAYER_ICON_RENDER_SIZE),
       anchor: new window.google.maps.Point(
         PLAYER_ICON_RENDER_SIZE / 2,
@@ -134,7 +135,6 @@ export default function GameMap() {
       ),
     } as google.maps.Icon;
   }, [map]);
-
   // Fetch active faucets from Supabase
   const { data: faucetsData } = useQuery<{ faucets: Faucet[] }>({
     queryKey: ['faucets', userLocation?.lat, userLocation?.lng],
