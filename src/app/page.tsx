@@ -7,6 +7,7 @@ import WalletButton from '@/components/WalletButton';
 import CoordinatesDisplay from '@/components/CoordinatesDisplay';
 import LeaderboardToggle from '@/components/LeaderboardToggle';
 import CreateFaucetButton from '@/components/CreateFaucetButton';
+import ShopButton from '@/components/ShopButton';
 import { useAccount, useChainId } from 'wagmi';
 import { useEffect, useState } from 'react';
 import { useUserInit } from '@/hooks/useUserInit';
@@ -53,6 +54,9 @@ function GameContent() {
             
             {/* Coordinates display */}
             <CoordinatesDisplay />
+            
+            {/* Shop */}
+            <ShopButton />
             
             {/* Create Faucet button */}
             <CreateFaucetButton />
