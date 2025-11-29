@@ -19,7 +19,7 @@ export async function GET() {
   // Test Supabase connection
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_ANON_KEY;
-  
+
   if (supabaseUrl && supabaseKey) {
     status.supabase.configured = true;
     try {
@@ -28,9 +28,9 @@ export async function GET() {
         .from('faucets')
         .select('*')
         .limit(1);
-      
+
       if (error) {
-        const message = error.message || '';
+        const message = error.message ?? '';
         if (message.includes('relation') || message.includes('does not exist')) {
           status.supabase.connected = true;
           status.supabase.error = 'Connected, but "faucets" table does not exist';
@@ -49,7 +49,7 @@ export async function GET() {
 
   // Test MongoDB connection
   const mongoUri = process.env.MONGODB_URI;
-  
+
   if (mongoUri) {
     status.mongodb.configured = true;
     try {
