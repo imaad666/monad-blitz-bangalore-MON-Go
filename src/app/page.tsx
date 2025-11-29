@@ -60,14 +60,6 @@ function GameContent() {
             
             {/* Create Faucet button */}
             <CreateFaucetButton />
-            
-            {/* Admin link */}
-            <a
-              href="/admin/faucets"
-              className="bg-black/80 hover:bg-black/90 text-white px-3 py-2 rounded-lg text-sm font-semibold text-center"
-            >
-              🔧 Admin Panel
-            </a>
           </div>
           
           {/* Right side - Leaderboard toggle */}

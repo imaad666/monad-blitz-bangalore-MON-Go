@@ -215,6 +215,7 @@ export default function FaucetMineModal({
               faucet_id: faucet.id,
               user_address: address,
               claimed_amount: actualClaimedAmount,
+              tx_hash: claimHash,
             }),
           });
 

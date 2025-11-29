@@ -46,7 +46,7 @@ const publicClient = createPublicClient({
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { faucet_id, user_address, claimed_amount } = body;
+    const { faucet_id, user_address, claimed_amount, tx_hash } = body;
 
     if (!faucet_id || !user_address || claimed_amount === undefined) {
       return NextResponse.json(
@@ -152,16 +152,16 @@ export async function POST(request: NextRequest) {
     // This is optional - depends on your schema
     try {
       await supabaseServer
-        .from('claims')
+        .from('user_claims')
         .insert({
           faucet_id,
           user_address: user_address.toLowerCase(),
           amount: claimed_amount,
           claimed_at: new Date().toISOString(),
+          tx_hash: tx_hash || null,
         });
     } catch (error) {
-      // Claims table might not exist, that's okay
-      console.log('Could not record claim in claims table (might not exist)');
+      console.warn('Could not record claim in user_claims table (might not exist)', error);
     }
 
     return NextResponse.json({

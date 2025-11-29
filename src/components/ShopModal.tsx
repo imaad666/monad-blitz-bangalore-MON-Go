@@ -1,8 +1,9 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import { useAccount } from 'wagmi';
+import { useMemo, useState, useEffect } from 'react';
+import { useAccount, useSendTransaction, useWaitForTransactionReceipt } from 'wagmi';
 import { useQuery } from '@tanstack/react-query';
+import { parseEther } from 'viem';
 
 import chog from '../../assets/chog.png';
 import moyaki from '../../assets/moyaki.png';
@@ -18,15 +19,16 @@ interface ShopModalProps {
 
 type AvatarId = 'default' | 'chog' | 'moyaki' | 'molandak' | 'mouch' | 'salmonad';
 
-const AVATARS: Array<{ id: AvatarId; name: string; price: number; src: string }> = [
-  { id: 'chog', name: 'Chog', price: 100, src: (chog as unknown as { src: string }).src },
-  { id: 'moyaki', name: 'Moyaki', price: 120, src: (moyaki as unknown as { src: string }).src },
-  { id: 'molandak', name: 'Molandak', price: 150, src: (molandak as unknown as { src: string }).src },
-  { id: 'mouch', name: 'Mouch', price: 90, src: (mouch as unknown as { src: string }).src },
-  { id: 'salmonad', name: 'Salmonad', price: 110, src: (salmonad as unknown as { src: string }).src },
+const AVATARS: Array<{ id: AvatarId; name: string; priceMon: number; src: string }> = [
+  { id: 'chog', name: 'Chog', priceMon: 1, src: (chog as unknown as { src: string }).src },
+  { id: 'moyaki', name: 'Moyaki', priceMon: 2, src: (moyaki as unknown as { src: string }).src },
+  { id: 'molandak', name: 'Molandak', priceMon: 3, src: (molandak as unknown as { src: string }).src },
+  { id: 'mouch', name: 'Mouch', priceMon: 7, src: (mouch as unknown as { src: string }).src },
+  { id: 'salmonad', name: 'Salmonad', priceMon: 5, src: (salmonad as unknown as { src: string }).src },
 ];
 
 const DEFAULT_AVATAR_SRC = (defaultAvatar as unknown as { src: string }).src;
+const SHOP_OWNER_ADDRESS = process.env.NEXT_PUBLIC_SHOP_OWNER_ADDRESS as `0x${string}` | undefined;
 
 function getPurchased(): AvatarId[] {
   if (typeof window === 'undefined') return [];
@@ -59,6 +61,26 @@ export default function ShopModal({ isOpen, onClose }: ShopModalProps) {
   const { address, isConnected } = useAccount();
   const [purchased, setPurchasedState] = useState<AvatarId[]>(getPurchased());
   const [selected, setSelectedState] = useState<AvatarId>(getSelected());
+  const [pendingAvatar, setPendingAvatar] = useState<AvatarId | null>(null);
+  const [txError, setTxError] = useState<string | null>(null);
+
+  const {
+    data: txHash,
+    sendTransaction,
+    isPending: isSending,
+    error: sendError,
+    reset: resetSendTransaction,
+  } = useSendTransaction();
+
+  const {
+    isLoading: isConfirming,
+    isSuccess: isTxSuccess,
+  } = useWaitForTransactionReceipt({
+    hash: txHash,
+    query: {
+      enabled: Boolean(txHash),
+    },
+  });
 
   const { data: userData } = useQuery({
     queryKey: ['userData', address],
@@ -75,11 +97,58 @@ export default function ShopModal({ isOpen, onClose }: ShopModalProps) {
 
   const balance = userData?.score ?? 0;
 
-  const canAfford = useMemo(() => {
-    const map: Record<AvatarId, boolean> = { default: true, chog: false, moyaki: false, molandak: false, mouch: false, salmonad: false };
-    AVATARS.forEach((a) => (map[a.id] = balance >= a.price));
-    return map;
-  }, [balance]);
+  useEffect(() => {
+    if (sendError) {
+      setTxError(sendError?.shortMessage || sendError?.message || 'Transaction failed');
+      setPendingAvatar(null);
+    }
+  }, [sendError]);
+
+  useEffect(() => {
+    if (isTxSuccess && pendingAvatar) {
+      const next = Array.from(new Set([...purchased, pendingAvatar]));
+      setPurchased(next);
+      setPurchasedState(next);
+      setSelected(pendingAvatar);
+      setSelectedState(pendingAvatar);
+      setPendingAvatar(null);
+      setTxError(null);
+      resetSendTransaction?.();
+    }
+  }, [isTxSuccess, pendingAvatar, purchased, resetSendTransaction]);
+
+  const isProcessing = useMemo(() => {
+    if (!pendingAvatar) return null;
+    return {
+      avatar: pendingAvatar,
+      label: isConfirming ? 'Waiting for confirmation...' : 'Confirm in wallet...',
+    };
+  }, [pendingAvatar, isConfirming]);
+
+  const handleBuy = (avatarId: AvatarId, priceMon: number) => {
+    if (!isConnected || !address) {
+      alert('Please connect your wallet before buying.');
+      return;
+    }
+
+    if (!SHOP_OWNER_ADDRESS) {
+      alert('Shop owner address is not configured.');
+      return;
+    }
+
+    try {
+      setTxError(null);
+      setPendingAvatar(avatarId);
+      sendTransaction({
+        to: SHOP_OWNER_ADDRESS,
+        value: parseEther(priceMon.toString()),
+      });
+    } catch (error: any) {
+      console.error('Error initiating purchase:', error);
+      setTxError(error?.message || 'Failed to initiate transaction');
+      setPendingAvatar(null);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -94,12 +163,29 @@ export default function ShopModal({ isOpen, onClose }: ShopModalProps) {
         </div>
 
         <div className="mb-4 text-sm">
-          <div className="text-gray-400">Balance</div>
+          <div className="text-gray-400">Collected MON (in-game)</div>
           <div className="font-semibold">{balance} MON</div>
-          <div className="text-xs text-gray-500 mt-1">
-            Purchases are saved on this device for now.
+          <div className="text-xs text-gray-500 mt-1 space-y-1">
+            <p>Purchases require an on-chain MON Testnet payment. Funds go to the shop owner.</p>
+            {SHOP_OWNER_ADDRESS && (
+              <p className="text-[11px] text-gray-400">
+                Owner: {SHOP_OWNER_ADDRESS.slice(0, 6)}...{SHOP_OWNER_ADDRESS.slice(-4)}
+              </p>
+            )}
           </div>
         </div>
+
+        {isProcessing && (
+          <div className="mb-4 text-sm bg-blue-500/10 border border-blue-500/40 text-blue-200 px-3 py-2 rounded">
+            {isProcessing.label}
+          </div>
+        )}
+
+        {txError && (
+          <div className="mb-4 text-sm bg-red-600/10 border border-red-600/30 text-red-200 px-3 py-2 rounded">
+            {txError}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           {AVATARS.map((item) => {
@@ -108,22 +194,18 @@ export default function ShopModal({ isOpen, onClose }: ShopModalProps) {
               <div key={item.id} className="bg-white/5 rounded-lg p-3 flex flex-col items-center gap-2">
                 <img src={item.src} alt={item.name} className="w-20 h-20 object-contain rounded-md" />
                 <div className="text-sm font-semibold">{item.name}</div>
-                <div className="text-xs text-gray-400">{item.price} MON</div>
+                <div className="text-xs text-gray-400">{item.priceMon} MON Test</div>
                 {!owned ? (
                   <button
-                    className={`w-full px-2 py-1 rounded text-sm font-semibold ${canAfford[item.id] ? 'bg-purple-600 hover:bg-purple-700 text-white' : 'bg-gray-700 text-gray-400 cursor-not-allowed'}`}
-                    disabled={!canAfford[item.id]}
-                    onClick={() => {
-                      if (!canAfford[item.id]) return;
-                      const next = Array.from(new Set([...purchased, item.id]));
-                      setPurchased(next);
-                      setPurchasedState(next);
-                      // Optionally select immediately
-                      setSelected(item.id);
-                      setSelectedState(item.id);
-                    }}
+                    className={`w-full px-2 py-1 rounded text-sm font-semibold ${
+                      pendingAvatar === item.id && (isSending || isConfirming)
+                        ? 'bg-gray-700 text-gray-400 cursor-wait'
+                        : 'bg-purple-600 hover:bg-purple-700 text-white'
+                    }`}
+                    disabled={pendingAvatar !== null}
+                    onClick={() => handleBuy(item.id, item.priceMon)}
                   >
-                    Buy
+                    {pendingAvatar === item.id && (isSending || isConfirming) ? 'Processing...' : 'Buy'}
                   </button>
                 ) : (
                   <button
@@ -168,5 +250,6 @@ export default function ShopModal({ isOpen, onClose }: ShopModalProps) {
     </>
   );
 }
+
 
 
