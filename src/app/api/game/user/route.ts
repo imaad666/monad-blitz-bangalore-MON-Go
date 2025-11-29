@@ -14,31 +14,27 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get user stats using the function
-    const { data: userStats, error } = await supabaseServer.rpc('get_user_stats', {
-      p_user_address: address,
-    });
+    const normalized = address.toLowerCase();
 
-    if (error) {
+    const { data: userData, error } = await supabaseServer
+      .from('users')
+      .select('address, total_collected, total_mines, last_claim_at, faucets_visited, first_connected_at, last_seen_at')
+      .eq('address', normalized)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
       return NextResponse.json(
         { error: error.message },
         { status: 500 }
       );
     }
 
-    // Get user data including faucets_visited
-    const { data: userData } = await supabaseServer
-      .from('users')
-      .select('faucets_visited, first_connected_at, last_seen_at')
-      .eq('address', address)
-      .single();
-
     return NextResponse.json({
       user: {
         address: address,
-        score: userStats?.total_score || 0,
-        total_claims: userStats?.total_claims || 0,
-        last_claim_at: userStats?.last_claim_at || null,
+        score: userData?.total_collected || 0,
+        total_claims: userData?.total_mines || 0,
+        last_claim_at: userData?.last_claim_at || null,
         faucets_visited: userData?.faucets_visited || 0,
         first_connected_at: userData?.first_connected_at || null,
         last_seen_at: userData?.last_seen_at || null,

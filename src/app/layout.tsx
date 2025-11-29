@@ -4,6 +4,9 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'Monad Go',
   description: 'Pokemon Go style game on Monad',
+  icons: {
+    icon: '/favicon.jpg',
+  },
 };
 
 export default function RootLayout({

@@ -8,11 +8,10 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '100');
     const offset = parseInt(searchParams.get('offset') || '0');
 
-    // Query the leaderboard view
     const { data, error } = await supabaseServer
-      .from('view_leaderboard')
-      .select('*')
-      .order('total_score', { ascending: false })
+      .from('users')
+      .select('address, total_collected, total_mines, last_claim_at')
+      .order('total_collected', { ascending: false })
       .range(offset, offset + limit - 1);
 
     if (error) {

@@ -4,9 +4,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useAccount } from 'wagmi';
 
 interface LeaderboardEntry {
-  user_address: string;
-  total_score: number;
-  total_claims: number;
+  address: string;
+  total_collected: number;
+  total_mines: number;
   last_claim_at: string | null;
 }
 
@@ -81,7 +81,7 @@ export default function Leaderboard() {
   // Calculate derived values (after all hooks and conditional returns)
   const leaderboard = data?.leaderboard || [];
   const userRank = address
-    ? leaderboard.findIndex((entry) => entry.user_address.toLowerCase() === address.toLowerCase()) + 1
+    ? leaderboard.findIndex((entry) => entry.address?.toLowerCase() === address.toLowerCase()) + 1
     : null;
   const userOnLeaderboard = address && userRank && userRank > 0;
 
@@ -118,12 +118,12 @@ export default function Leaderboard() {
       ) : (
         <div className="space-y-2">
           {leaderboard.map((entry, index) => {
-            const isCurrentUser = address && entry.user_address.toLowerCase() === address.toLowerCase();
+            const isCurrentUser = address && entry.address?.toLowerCase() === address.toLowerCase();
             const rank = index + 1;
             
             return (
               <div
-                key={entry.user_address}
+                key={entry.address}
                 className={`flex items-center justify-between p-3 rounded-lg ${
                   isCurrentUser
                     ? 'bg-purple-600/30 border-2 border-purple-500'
@@ -135,14 +135,14 @@ export default function Leaderboard() {
                     {rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`}
                   </div>
                   <div className="flex-1">
-                    <div className="font-semibold">{formatAddress(entry.user_address)}</div>
+                    <div className="font-semibold">{formatAddress(entry.address)}</div>
                     <div className="text-xs text-gray-400">
-                      {entry.total_claims} claims • Last: {formatDate(entry.last_claim_at)}
+                      {entry.total_mines} claims • Last: {formatDate(entry.last_claim_at)}
                     </div>
                   </div>
                 </div>
                 <div className="text-xl font-bold text-purple-400">
-                  {entry.total_score} MON
+                  {entry.total_collected} MON
                 </div>
               </div>
             );
@@ -156,7 +156,7 @@ export default function Leaderboard() {
           <div className="flex items-center justify-between p-3 rounded-lg bg-purple-600/30 border-2 border-purple-500">
             <div className="font-semibold">#{userRank}</div>
             <div className="font-bold text-purple-400">
-              {leaderboard[userRank - 1]?.total_score || 0} MON
+              {leaderboard[userRank - 1]?.total_collected || 0} MON
             </div>
           </div>
         </div>
