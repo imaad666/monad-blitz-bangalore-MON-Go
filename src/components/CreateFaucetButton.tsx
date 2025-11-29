@@ -14,9 +14,9 @@ export default function CreateFaucetButton() {
     <>
       <button
         onClick={() => setIsModalOpen(true)}
-        className="bg-green-600/80 hover:bg-green-700/80 text-white px-3 py-2 rounded-lg text-sm font-semibold transition-colors shadow-lg"
+        className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-none text-sm font-semibold transition-colors shadow-lg w-full text-center"
       >
-        ➕ Create Faucet
+        Create Faucet
       </button>
       
       <CreateFaucetModal

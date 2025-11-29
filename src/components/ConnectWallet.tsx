@@ -51,7 +51,7 @@ function WalletOption({
     <button
       disabled={!ready}
       onClick={onClick}
-      className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-lg font-semibold transition"
+      className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white px-6 py-3 rounded-none font-semibold transition text-center"
     >
       {connector.name}
     </button>
@@ -65,7 +65,7 @@ export function Connection() {
   return (
       <button
         onClick={() => disconnect()}
-      className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg transition text-sm font-semibold w-full"
+      className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-none transition text-sm font-semibold w-full text-center"
       >
         Disconnect
       </button>

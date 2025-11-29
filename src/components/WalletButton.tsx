@@ -35,16 +35,16 @@ export default function WalletButton() {
 
   return (
     <>
-      <div className="bg-black/80 text-white px-3 py-2 rounded-lg w-full flex items-center justify-between gap-2">
+      <div className="bg-black text-white px-3 py-2 rounded-none w-full flex items-center justify-between gap-2 border border-white/10">
         <div className="flex-1">
-          <div className="text-xs text-gray-400">Wallet Balance (MON Test)</div>
+          <div className="text-xs text-gray-400">Available MON</div>
           <div className="text-lg sm:text-xl font-bold text-purple-400">
             {isBalanceLoading ? 'Loading...' : `${formattedBalance} MON`}
           </div>
         </div>
         <button
           onClick={() => setIsProfileOpen(true)}
-          className="w-8 h-8 rounded-full bg-purple-600 hover:bg-purple-700 flex items-center justify-center transition-colors flex-shrink-0"
+          className="w-10 h-10 bg-purple-600 hover:bg-purple-700 flex items-center justify-center transition-colors flex-shrink-0 rounded-none"
           aria-label="Open user profile"
         >
           <svg

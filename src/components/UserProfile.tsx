@@ -46,47 +46,40 @@ export default function UserProfile({ isOpen, onClose }: UserProfileProps) {
         <div className="p-6">
           {/* Header */}
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-purple-400">User Profile</h2>
+            <div className="w-12 h-12 bg-purple-600 text-white flex items-center justify-center rounded-full shadow-lg">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-6 w-6 text-white"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                />
+              </svg>
+            </div>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white transition-colors"
+              className="text-gray-400 hover:text-white transition-colors text-lg font-semibold rounded-none px-3 py-1 border border-white/20"
               aria-label="Close"
             >
-              ✕
+              Close
             </button>
           </div>
 
           {/* Wallet Address */}
-          <div className="mb-6 p-4 bg-black/50 rounded-lg">
+          <div className="mb-6 p-4 bg-black/50 rounded-none border border-white/10">
             <div className="text-xs text-gray-400 mb-1">Wallet Address</div>
             <div className="text-sm font-mono break-all">
               {address}
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="space-y-4 mb-6">
-            <div className="p-4 bg-purple-600/20 border border-purple-500/50 rounded-lg">
-              <div className="text-sm text-gray-400 mb-1">Total MON Collected</div>
-              <div className="text-3xl font-bold text-purple-400">
-                {userData?.score || 0}
-              </div>
-            </div>
-
-            <div className="p-4 bg-purple-600/20 border border-purple-500/50 rounded-lg">
-              <div className="text-sm text-gray-400 mb-1">Faucets Visited</div>
-              <div className="text-3xl font-bold text-purple-400">
-                {userData?.faucets_visited || 0}
-              </div>
-            </div>
-
-            <div className="p-4 bg-black/50 rounded-lg">
-              <div className="text-sm text-gray-400 mb-1">Total Claims</div>
-              <div className="text-xl font-semibold">
-                {userData?.total_claims || 0}
-              </div>
-            </div>
-          </div>
+          {/* Stats removed */}
 
           {/* Disconnect Button */}
           <button
