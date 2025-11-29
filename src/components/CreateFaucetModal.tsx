@@ -1,37 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useChainId } from 'wagmi';
-import { parseEther } from 'viem';
+import { useAccount, useDeployContract, useWaitForTransactionReceipt, useChainId, useWriteContract, useSwitchChain } from 'wagmi';
+import { parseEther, formatEther } from 'viem';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCurrentLocation } from '@/hooks/useCurrentLocation';
-import { MANAGER_CONTRACT_ADDRESS } from '@/config/contracts';
+import { getFaucetDeploymentBytecode } from '@/lib/deployFaucet';
+import { FAUCET_ABI } from '@/lib/contracts';
 
 const MONAD_TESTNET_CHAIN_ID = 10143;
-
-// MonadGoManager Contract ABI
-const MANAGER_ABI = [
-  {
-    inputs: [
-      { name: 'faucetId', type: 'string' },
-      { name: 'rewardPerMine', type: 'uint256' },
-    ],
-    name: 'createFaucet',
-    outputs: [],
-    stateMutability: 'payable',
-    type: 'function',
-  },
-  {
-    anonymous: false,
-    inputs: [
-      { indexed: true, name: 'faucetId', type: 'string' },
-      { indexed: false, name: 'creator', type: 'address' },
-      { indexed: false, name: 'amount', type: 'uint256' },
-    ],
-    name: 'FaucetCreated',
-    type: 'event',
-  },
-] as const;
 
 interface CreateFaucetModalProps {
   isOpen: boolean;
@@ -45,44 +22,48 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
   const queryClient = useQueryClient();
   const [faucetName, setFaucetName] = useState('');
   const [fundingAmount, setFundingAmount] = useState('0.1'); // MON amount to fund
-  const [rewardPerMine, setRewardPerMine] = useState('0.01'); // MON per mine
+  const [rewardPerMine, setRewardPerMine] = useState('0.001'); // MON per mine (0.001 default)
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deployedContractAddress, setDeployedContractAddress] = useState<`0x${string}` | null>(null);
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
+  const [showContractInfo, setShowContractInfo] = useState(false);
 
   const isOnMonadTestnet = chainId === MONAD_TESTNET_CHAIN_ID;
-  const contractAddressValid = MANAGER_CONTRACT_ADDRESS && MANAGER_CONTRACT_ADDRESS !== '0x0000000000000000000000000000000000000000';
-  const [createdFaucetId, setCreatedFaucetId] = useState<string | null>(null);
 
+  // Switch chain hook
+  const { switchChain, isPending: isSwitchingChain } = useSwitchChain();
+
+  // Deploy contract hook
   const {
-    data: hash,
-    writeContract,
-    isPending,
-    error: writeError,
-  } = useWriteContract();
+    data: deployHash,
+    deployContract,
+    isPending: isDeploying,
+    error: deployError,
+  } = useDeployContract();
 
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
-    hash,
+  // Wait for deployment transaction
+  const { isLoading: isConfirmingDeploy, isSuccess: isDeploySuccess, data: deployReceipt } = useWaitForTransactionReceipt({
+    hash: deployHash,
   });
 
-  // Generate a unique faucet ID (UUID-like)
-  const generateFaucetId = () => {
-    return `faucet-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-  };
+  // Write contract hook for funding the deployed contract
+  const {
+    data: fundHash,
+    writeContract: fundContract,
+    isPending: isFunding,
+    error: fundError,
+  } = useWriteContract();
+
+  // Wait for funding transaction
+  const { isLoading: isConfirmingFund, isSuccess: isFundSuccess } = useWaitForTransactionReceipt({
+    hash: fundHash,
+  });
 
   const handleCreateFaucet = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!isConnected || !address) {
       alert('Please connect your wallet first');
-      return;
-    }
-
-    if (!isOnMonadTestnet) {
-      alert('Please switch to Monad Testnet to create a faucet. Current network: ' + chainId);
-      return;
-    }
-
-    if (!contractAddressValid) {
-      alert('MonadGoManager contract address is not configured. Please set NEXT_PUBLIC_MANAGER_CONTRACT_ADDRESS in .env.local');
       return;
     }
 
@@ -96,34 +77,87 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
       return;
     }
 
+    // CRITICAL: Block deployment if not on Monad Testnet
+    if (!isOnMonadTestnet) {
+      alert(
+        '⚠️ You must be on Monad Testnet to create a faucet!\n\n' +
+        'Current network: ' + (chainId === 1 ? 'Ethereum Mainnet' : `Chain ${chainId}`) + '\n' +
+        'Required: Monad Testnet (Chain ID: 10143)\n\n' +
+        'Please switch to Monad Testnet in your wallet first, then try again.\n\n' +
+        'If Monad Testnet is not in your wallet, add it:\n' +
+        '• Network Name: Monad Testnet\n' +
+        '• RPC URL: https://testnet-rpc.monad.xyz\n' +
+        '• Chain ID: 10143\n' +
+        '• Currency Symbol: MON'
+      );
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const faucetId = generateFaucetId();
-      setCreatedFaucetId(faucetId); // Store for later use
-      const fundingWei = parseEther(fundingAmount);
       const rewardWei = parseEther(rewardPerMine);
+      
+      // Step 1: Deploy the Faucet contract
+      let deploymentBytecode: `0x${string}`;
+      try {
+        deploymentBytecode = getFaucetDeploymentBytecode(rewardWei);
+      } catch (error: any) {
+        alert('Error: ' + error.message + '\n\nPlease compile the contract first:\n1. Install Foundry: curl -L https://foundry.paradigm.xyz | bash\n2. Run: forge build\n3. Set NEXT_PUBLIC_FAUCET_BYTECODE in .env.local');
+        setIsSubmitting(false);
+        return;
+      }
 
-      // Step 1: Create faucet on-chain
-      // The funds go to the contract, not a user address - the contract holds them securely
-      writeContract({
-        address: MANAGER_CONTRACT_ADDRESS as `0x${string}`,
-        abi: MANAGER_ABI,
-        functionName: 'createFaucet',
-        args: [faucetId, rewardWei],
-        value: fundingWei,
-        chainId: MONAD_TESTNET_CHAIN_ID, // Explicitly specify Monad Testnet
+      // Double-check we're on the right network before deploying
+      if (chainId !== MONAD_TESTNET_CHAIN_ID) {
+        alert('Network changed! Please ensure you are on Monad Testnet (Chain ID: 10143) and try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate deployContract function exists
+      if (!deployContract) {
+        alert('Contract deployment function not available. Please refresh the page and try again.');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Deploy contract - wagmi will use the current chain from the wallet
+      deployContract({
+        bytecode: deploymentBytecode,
       });
     } catch (error: any) {
-      console.error('Error creating faucet:', error);
-      alert('Error: ' + (error.message || 'Failed to create faucet'));
+      console.error('Error deploying faucet:', error);
+      if (error?.message?.includes('chain') || error?.message?.includes('network')) {
+        alert('Network error: Please ensure you are connected to Monad Testnet (Chain ID: 10143) in your wallet.');
+      } else {
+        alert('Error: ' + (error.message || 'Failed to deploy faucet'));
+      }
       setIsSubmitting(false);
     }
   };
 
-  // When transaction succeeds, add to database
+  // When deployment succeeds, fund the contract
   useEffect(() => {
-    if (isSuccess && hash && userLocation && faucetName && createdFaucetId) {
+    if (isDeploySuccess && deployReceipt && deployReceipt.contractAddress) {
+      const contractAddress = deployReceipt.contractAddress;
+      setDeployedContractAddress(contractAddress);
+      setShowContractInfo(true); // Show contract info
+      
+      // Step 2: Fund the deployed contract
+      const fundingWei = parseEther(fundingAmount);
+      
+      // Send funds to the contract (it will accept via receive() function)
+      fundContract({
+        to: contractAddress,
+        value: fundingWei,
+      });
+    }
+  }, [isDeploySuccess, deployReceipt, fundingAmount, fundContract]);
+
+  // When funding succeeds, add to database
+  useEffect(() => {
+    if (isFundSuccess && deployedContractAddress && userLocation && faucetName) {
       // Add to database
       fetch('/api/admin/faucets', {
         method: 'POST',
@@ -135,46 +169,89 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
           total_coins: Math.floor(parseFloat(fundingAmount) / parseFloat(rewardPerMine)),
           remaining_coins: Math.floor(parseFloat(fundingAmount) / parseFloat(rewardPerMine)),
           is_active: true,
-          contract_address: MANAGER_CONTRACT_ADDRESS,
+          contract_address: deployedContractAddress,
         }),
       })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.error) {
+        .then(async (res) => {
+          let data;
+          try {
+            data = await res.json();
+          } catch (parseError) {
+            throw new Error(`Failed to parse response: ${parseError}`);
+          }
+          
+          if (!res.ok) {
+            throw new Error(data?.error || `HTTP ${res.status}: ${res.statusText}`);
+          }
+          
+          if (data?.error) {
             throw new Error(data.error);
           }
-          // Refresh faucets list
-          queryClient.invalidateQueries({ queryKey: ['faucets'] });
-          queryClient.invalidateQueries({ queryKey: ['admin-faucets'] });
+          
+          if (!data) {
+            throw new Error('Empty response from server');
+          }
+          
+          return data;
+        })
+        .then((data) => {
+          console.log('Faucet added to database:', data);
+          
+          // Validate response data
+          if (!data || !data.data) {
+            throw new Error('Invalid response from server: missing data');
+          }
+          
+          // Refresh faucets list (with error handling)
+          try {
+            queryClient.invalidateQueries({ queryKey: ['faucets'] });
+            queryClient.invalidateQueries({ queryKey: ['admin-faucets'] });
+          } catch (queryError) {
+            console.error('Error invalidating queries:', queryError);
+            // Continue anyway
+          }
           
           // Reset form
           setFaucetName('');
           setFundingAmount('0.1');
-          setRewardPerMine('0.01');
-          setCreatedFaucetId(null);
+          setRewardPerMine('0.001');
+          setDeployedContractAddress(null);
+          setShowContractInfo(false);
           setIsSubmitting(false);
           onClose();
-          alert('Faucet created successfully!');
+          alert('Faucet created and funded successfully!');
         })
         .catch((error) => {
           console.error('Error adding faucet to database:', error);
-          alert('Faucet created on-chain, but failed to add to database: ' + error.message);
+          console.error('Error stack:', error.stack);
+          console.error('Error details:', {
+            message: error.message,
+            name: error.name,
+            cause: error.cause,
+          });
+          
+          const errorMessage = error.message || 'Unknown error';
+          alert(
+            `Faucet deployed and funded, but failed to add to database:\n\n${errorMessage}\n\n` +
+            `Contract Address: ${deployedContractAddress}\n\n` +
+            `You can manually add this faucet to the database with the contract address above.\n\n` +
+            `Check the browser console for more details.`
+          );
           setIsSubmitting(false);
-          setCreatedFaucetId(null);
+          // Keep contract info visible so user can manually add
+          setShowContractInfo(true);
         });
     }
-  }, [isSuccess, hash, userLocation, faucetName, fundingAmount, rewardPerMine, createdFaucetId, queryClient, onClose]);
+  }, [isFundSuccess, deployedContractAddress, userLocation, faucetName, fundingAmount, rewardPerMine, queryClient, onClose]);
 
   if (!isOpen) return null;
-
-  const isLoading = isPending || isConfirming || isSubmitting;
 
   return (
     <>
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/50 z-40"
-        onClick={!isLoading ? onClose : undefined}
+        onClick={!(isDeploying || isConfirmingDeploy || isFunding || isConfirmingFund || isSubmitting) ? onClose : undefined}
       />
 
       {/* Modal */}
@@ -200,16 +277,47 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
         )}
 
         {!isOnMonadTestnet && isConnected && (
-          <div className="bg-red-600/20 border border-red-600 text-red-400 p-3 rounded mb-4">
-            ⚠️ Please switch to Monad Testnet (Chain ID: {MONAD_TESTNET_CHAIN_ID}). Current: {chainId}
+          <div className="bg-red-600/20 border border-red-600 text-red-400 p-3 rounded mb-4 text-sm">
+            <div className="font-bold mb-2">⚠️ Wrong Network!</div>
+            <div className="mb-2">
+              You must be on <strong>Monad Testnet</strong> to create a faucet.
+            </div>
+            <div className="text-xs text-red-300 mb-2">
+              Current: {chainId === 1 ? 'Ethereum Mainnet' : `Chain ${chainId}`} | Required: Monad Testnet (10143)
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  await switchChain({ chainId: MONAD_TESTNET_CHAIN_ID });
+                } catch (error: any) {
+                  if (error?.code === 4902 || error?.message?.includes('Unrecognized chain') || error?.message?.includes('unrecognized chain')) {
+                    alert(
+                      'Monad Testnet is not added to your wallet.\n\n' +
+                      'Please add it manually:\n' +
+                      'Network Name: Monad Testnet\n' +
+                      'RPC URL: https://testnet-rpc.monad.xyz\n' +
+                      'Chain ID: 10143\n' +
+                      'Currency Symbol: MON\n\n' +
+                      'Then switch to it and try again.'
+                    );
+                  } else if (error?.code === 4001) {
+                    alert('Network switch was cancelled. Please switch to Monad Testnet manually.');
+                  } else {
+                    alert('Failed to switch network: ' + (error?.message || 'Unknown error') + '\n\nPlease switch manually in your wallet.');
+                  }
+                }
+              }}
+              disabled={isSwitchingChain}
+              className="w-full mt-2 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded text-sm font-semibold disabled:opacity-50 transition-colors"
+            >
+              {isSwitchingChain ? 'Switching Network...' : 'Switch to Monad Testnet'}
+            </button>
+            <div className="text-xs text-red-300 mt-2">
+              💡 After switching, wait for the network indicator to update, then try creating the faucet again.
+            </div>
           </div>
         )}
 
-        {!contractAddressValid && (
-          <div className="bg-red-600/20 border border-red-600 text-red-400 p-3 rounded mb-4">
-            ⚠️ Contract address not configured. Please set NEXT_PUBLIC_MANAGER_CONTRACT_ADDRESS in .env.local
-          </div>
-        )}
 
         <form onSubmit={handleCreateFaucet} className="space-y-4">
           <div>
@@ -221,7 +329,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
               required
               value={faucetName}
               onChange={(e) => setFaucetName(e.target.value)}
-              disabled={isLoading}
+              disabled={isDeploying || isConfirmingDeploy || isFunding || isConfirmingFund || isSubmitting}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-purple-500 text-white"
               placeholder="e.g., Central Park Fountain"
             />
@@ -238,7 +346,7 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
               required
               value={fundingAmount}
               onChange={(e) => setFundingAmount(e.target.value)}
-              disabled={isLoading}
+              disabled={isDeploying || isConfirmingDeploy || isFunding || isConfirmingFund || isSubmitting}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-purple-500 text-white"
               placeholder="0.1"
             />
@@ -258,9 +366,9 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
               required
               value={rewardPerMine}
               onChange={(e) => setRewardPerMine(e.target.value)}
-              disabled={isLoading}
+              disabled={isDeploying || isConfirmingDeploy || isFunding || isConfirmingFund || isSubmitting}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:ring-2 focus:ring-purple-500 text-white"
-              placeholder="0.01"
+              placeholder="0.001"
             />
             <p className="text-xs text-gray-500 mt-1">
               How much MON each player gets per mine
@@ -270,16 +378,41 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
             </p>
           </div>
 
-          {writeError && (
+          {(deployError || fundError) && (
             <div className="bg-red-600/20 border border-red-600 text-red-400 p-3 rounded text-sm">
-              Error: {writeError.message}
+              Error: {(deployError || fundError)?.message}
             </div>
           )}
 
-          {isLoading && (
+          {showContractInfo && deployedContractAddress && (
+            <div className="bg-green-600/20 border border-green-600 text-green-400 p-4 rounded text-sm space-y-2">
+              <div className="font-bold">✓ Contract Deployed Successfully</div>
+              <div className="break-all font-mono text-xs bg-black/30 p-2 rounded">
+                <div className="mb-1">Contract Address:</div>
+                <div className="text-green-300">{deployedContractAddress}</div>
+              </div>
+              <div>
+                <a
+                  href={`https://testnet-explorer.monad.xyz/address/${deployedContractAddress}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-400 hover:text-blue-300 underline text-xs"
+                >
+                  🔗 View on Monad Explorer
+                </a>
+              </div>
+              <div className="text-xs text-yellow-300 mt-2">
+                💡 If database insertion failed, you can manually add this faucet using the contract address above.
+              </div>
+            </div>
+          )}
+
+          {(isDeploying || isConfirmingDeploy || isFunding || isConfirmingFund || isSubmitting) && (
             <div className="bg-blue-600/20 border border-blue-600 text-blue-400 p-3 rounded text-sm">
-              {isPending && 'Please confirm the transaction in your wallet...'}
-              {isConfirming && 'Waiting for transaction confirmation...'}
+              {isDeploying && 'Please confirm contract deployment in your wallet...'}
+              {isConfirmingDeploy && 'Deploying contract...'}
+              {isFunding && 'Please confirm funding transaction in your wallet...'}
+              {isConfirmingFund && 'Funding contract...'}
               {isSubmitting && 'Adding faucet to database...'}
             </div>
           )}
@@ -288,17 +421,17 @@ export default function CreateFaucetModal({ isOpen, onClose }: CreateFaucetModal
             <button
               type="button"
               onClick={onClose}
-              disabled={isLoading}
+              disabled={isDeploying || isConfirmingDeploy || isFunding || isConfirmingFund || isSubmitting}
               className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={isLoading || !isConnected || !userLocation || !isOnMonadTestnet || !contractAddressValid}
+              disabled={isDeploying || isConfirmingDeploy || isFunding || isConfirmingFund || isSubmitting || isSwitchingChain || isSwitchingNetwork || !isConnected || !userLocation || !isOnMonadTestnet}
               className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'Creating...' : 'Create Faucet'}
+              {(isDeploying || isConfirmingDeploy || isFunding || isConfirmingFund || isSubmitting || isSwitchingChain || isSwitchingNetwork) ? 'Processing...' : 'Create Faucet'}
             </button>
           </div>
         </form>

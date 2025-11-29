@@ -41,9 +41,12 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Ensure data is an array
+    const faucets = Array.isArray(data) ? data : [];
+
     return NextResponse.json({
-      faucets: data || [],
-      count: data?.length || 0,
+      faucets,
+      count: faucets.length,
     });
   } catch (error: any) {
     return NextResponse.json(

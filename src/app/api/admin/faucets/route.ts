@@ -16,7 +16,10 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({ data, count: data?.length || 0 });
+    // Ensure data is an array
+    const faucets = Array.isArray(data) ? data : [];
+
+    return NextResponse.json({ data: faucets, count: faucets.length });
   } catch (error: any) {
     return NextResponse.json(
       { error: error.message || 'Internal server error' },
@@ -29,7 +32,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, lat, lng, total_coins = 100, remaining_coins, is_active = true } = body;
+    const { name, lat, lng, total_coins = 100, remaining_coins, is_active = true, contract_address } = body;
 
     // Validate required fields
     if (!name || lat === undefined || lng === undefined) {
@@ -47,19 +50,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate contract address if provided
+    if (contract_address && !contract_address.match(/^0x[a-fA-F0-9]{40}$/)) {
+      return NextResponse.json(
+        { error: 'Invalid contract address format' },
+        { status: 400 }
+      );
+    }
+
     // Use remaining_coins if provided, otherwise use total_coins
     const coins = remaining_coins !== undefined ? remaining_coins : total_coins;
 
+    // Build insert object
+    const insertData: any = {
+      name,
+      lat,
+      lng,
+      total_coins,
+      remaining_coins: coins,
+      is_active,
+    };
+
+    // Add contract_address if provided
+    if (contract_address) {
+      insertData.contract_address = contract_address;
+    }
+
     const { data, error } = await supabaseServer
       .from('faucets')
-      .insert({
-        name,
-        lat,
-        lng,
-        total_coins,
-        remaining_coins: coins,
-        is_active,
-      })
+      .insert(insertData)
       .select()
       .single();
 

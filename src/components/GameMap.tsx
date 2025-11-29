@@ -114,6 +114,7 @@ interface Faucet {
   remaining_coins: number;
   total_coins: number;
   is_active: boolean;
+  contract_address?: string;
 }
 
 export default function GameMap() {
@@ -140,13 +141,22 @@ export default function GameMap() {
       if (!response.ok) {
         throw new Error('Failed to fetch faucets');
       }
-      return response.json();
+      const data = await response.json();
+      
+      // Ensure faucets is always an array
+      if (!data || !data.faucets) {
+        return { faucets: [] };
+      }
+      
+      return {
+        faucets: Array.isArray(data.faucets) ? data.faucets : [],
+      };
     },
     enabled: true,
     refetchInterval: 5000, // Refresh every 5 seconds for real-time updates
   });
 
-  const faucets = faucetsData?.faucets || [];
+  const faucets = Array.isArray(faucetsData?.faucets) ? faucetsData.faucets : [];
 
   // Get user location immediately on load
   useEffect(() => {
