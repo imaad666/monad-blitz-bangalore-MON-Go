@@ -1,33 +1,29 @@
-# Monad Blitz Bangalore Submission Process
+# Monad Go Faucet Game
 
-1. Visit the `monad-blitz-bangalore` repo (link here) and fork it.
+![Monad Go Screenshot](./docs/screenshot.png)
 
-![image](https://github.com/user-attachments/assets/ab46b2ea-ee0f-4237-87ef-c33bb1a94749)
+Monad Go is a location-based game where players hunt for MON Testnet faucets on a live map, mine them when in range, and claim MON to their wallets. Players can also deploy their own faucets, shop for avatars with MON, and track activity through Supabase-backed stats.
 
-2. Give it your project name, a one-liner description, make sure you are forking `main` branch and click `Create Fork`.
+## Features
 
-![image](https://github.com/user-attachments/assets/ffdebab7-c340-4e14-bd3c-36905f1016a3)
+- **Live Faucet Map**: Google Maps overlay showing nearby faucets and their remaining MON.
+- **Location-Based Mining**: Players must be within 50 meters of a faucet to mine pending claims.
+- **Wallet Integration**: Connect via Wagmi/WalletConnect; shop shows on-chain MON balance and purchases go to the shop owner.
+- **Supabase Backend**: Stores faucet metadata, user stats, and claim history.
+- **Deployment Flow**: Users can deploy faucet contracts directly from the UI (Monad Testnet) and fund them with MON.
+- **Shop & Avatars**: Buy avatars with MON Testnet; purchases trigger real transactions to the owner address.
 
-3. In your fork you can make all the changes you want, add code of your project, create branches, add information to `README.md`, you can change anything and everything.
+## Tech Stack
 
-4. Once you are done with your project and ready for submission, create a pull request.
+- Next.js 15 / React 18
+- Wagmi + viem for wallet interactions
+- Supabase for database + functions
+- Google Maps (via @vis.gl/react-google-maps)
+- TailwindCSS for styling
 
-![image](https://github.com/user-attachments/assets/58aa7140-55db-49db-9361-332449dbe116)
+## Getting Started
 
-![image](https://github.com/user-attachments/assets/5c8c61b1-23fd-4177-b06e-e8fca3a61ad4)
-
-5. Make sure you are create a pull request to the right repo `monad-developers/monad-blitz-bangalore`.
-
-![image](https://github.com/user-attachments/assets/41774ebc-d64c-43de-b3be-7e46d21bcaba)
-
-6. Make sure you see “Able to merge”, when creating a pull request then you can click `Create Pull Request`.
-
-![image](https://github.com/user-attachments/assets/b52f5e6f-9091-43af-9025-f2c61a7d1205)
-
-7. Give the pull request your project name and a description of the project (describe as much as you can about your project you can even add video demo links) then click `Create pull request`.
-
-![image](https://github.com/user-attachments/assets/9a3cc30a-498f-4d83-9060-adb11f88eff6)
-
-8. Finally verify if you created your pull request correctly by checking the repo on which the pull request is created and the source and destination branch of the pull request!
-
-![image](https://github.com/user-attachments/assets/b16befcd-2c29-4520-aa70-29883306e85c)
+```bash
+pnpm install
+pnpm dev
+```
