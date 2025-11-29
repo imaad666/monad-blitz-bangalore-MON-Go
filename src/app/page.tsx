@@ -9,6 +9,7 @@ import LeaderboardToggle from '@/components/LeaderboardToggle';
 import CreateFaucetButton from '@/components/CreateFaucetButton';
 import ShopButton from '@/components/ShopButton';
 import ToastHost from '@/components/ToastHost';
+import HeroLanding from '@/components/HeroLanding';
 import { useAccount, useChainId } from 'wagmi';
 import { useEffect, useState } from 'react';
 import { useUserInit } from '@/hooks/useUserInit';
@@ -75,6 +76,8 @@ function GameContent() {
 export default function Home() {
   return (
     <Providers>
+      {/* Landing section (white) then the main app section (map) */}
+      <HeroLanding />
       <GameContent />
     </Providers>
   );
