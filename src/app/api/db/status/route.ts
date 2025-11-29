@@ -30,7 +30,7 @@ export async function GET() {
         .limit(1);
 
       if (error) {
-        const message = error.message ?? '';
+        const message = error?.message ?? '';
         if (message.includes('relation') || message.includes('does not exist')) {
           status.supabase.connected = true;
           status.supabase.error = 'Connected, but "faucets" table does not exist';
