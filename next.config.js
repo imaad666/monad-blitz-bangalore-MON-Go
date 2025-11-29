@@ -9,13 +9,14 @@ const nextConfig = {
       net: false,
       tls: false,
     };
-    
-    // Ignore porto module if not found
+
+    // Ignore porto module if not found + alias shims
     config.resolve.alias = {
       ...config.resolve.alias,
       porto: false,
+      '@react-native-async-storage/async-storage': require('path').resolve(__dirname, 'src/shims/asyncStorage.ts'),
     };
-    
+
     return config;
   },
 };
