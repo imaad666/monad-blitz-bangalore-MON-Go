@@ -7,6 +7,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import FaucetMineModal from './FaucetMineModal';
 import { isWithinRadius } from '@/lib/distance';
 import avatarImg from '../../assets/default_avatar.png';
+import chog from '../../assets/chog.png';
+import moyaki from '../../assets/moyaki.png';
+import molandak from '../../assets/molandak.png';
+import mouch from '../../assets/mouch.png';
+import salmonad from '../../assets/salmonad.png';
 
 const mapStyles = [
   { elementType: 'geometry', stylers: [{ color: '#F9F6EE' }] },
@@ -99,8 +104,22 @@ const lootIcon = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
 </svg>
 `)}`;
 
-// Player avatar icon - use the PNG directly so the exact image shows as the dot
-const playerIcon: string = (avatarImg as unknown as { src: string }).src;
+// Avatar assets mapping
+const AVATAR_MAP: Record<string, string> = {
+  default: (avatarImg as unknown as { src: string }).src,
+  chog: (chog as unknown as { src: string }).src,
+  moyaki: (moyaki as unknown as { src: string }).src,
+  molandak: (molandak as unknown as { src: string }).src,
+  mouch: (mouch as unknown as { src: string }).src,
+  salmonad: (salmonad as unknown as { src: string }).src,
+};
+
+// Selected avatar helpers
+function getSelectedAvatarId(): string {
+  if (typeof window === 'undefined') return 'default';
+  return localStorage.getItem('monShop.selected') || 'default';
+}
+
 const PLAYER_ICON_RENDER_SIZE = 32; // match previous default marker size
 
 interface Faucet {
@@ -121,12 +140,14 @@ export default function GameMap() {
   const [hasCentered, setHasCentered] = useState(false);
   const [selectedFaucet, setSelectedFaucet] = useState<Faucet | null>(null);
   const [isMineModalOpen, setIsMineModalOpen] = useState(false);
+  const [avatarId, setAvatarId] = useState<string>(getSelectedAvatarId());
 
   // Build a sized icon once Google Maps is available
   const playerMarkerIcon = useMemo(() => {
-    if (typeof window === 'undefined' || !(window as any).google) return playerIcon;
+    const currentSrc = AVATAR_MAP[avatarId] || AVATAR_MAP['default'];
+    if (typeof window === 'undefined' || !(window as any).google) return currentSrc;
     return {
-      url: playerIcon,
+      url: currentSrc,
       size: new window.google.maps.Size(PLAYER_ICON_RENDER_SIZE, PLAYER_ICON_RENDER_SIZE),
       scaledSize: new window.google.maps.Size(PLAYER_ICON_RENDER_SIZE, PLAYER_ICON_RENDER_SIZE),
       anchor: new window.google.maps.Point(
@@ -134,7 +155,22 @@ export default function GameMap() {
         PLAYER_ICON_RENDER_SIZE / 2
       ),
     } as google.maps.Icon;
-  }, [map]);
+  }, [map, avatarId]);
+
+  // Listen for avatar changes from ShopModal via storage events
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === 'monShop.selected') {
+        setAvatarId(getSelectedAvatarId());
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    // Also poll once on mount in case it was set earlier
+    setAvatarId(getSelectedAvatarId());
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
   // Fetch active faucets from Supabase
   const { data: faucetsData } = useQuery<{ faucets: Faucet[] }>({
     queryKey: ['faucets', userLocation?.lat, userLocation?.lng],
