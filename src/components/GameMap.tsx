@@ -6,7 +6,9 @@ import { useAccount } from 'wagmi';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import FaucetMineModal from './FaucetMineModal';
 import { isWithinRadius } from '@/lib/distance';
+import { showToast } from '@/lib/toast';
 import avatarImg from '../../assets/default_avatar.png';
+import monadCoin from '../../assets/monad.png';
 import chog from '../../assets/chog.png';
 import moyaki from '../../assets/moyaki.png';
 import molandak from '../../assets/molandak.png';
@@ -96,13 +98,7 @@ const mapStyles = [
   },
 ];
 
-// Purple circle SVG icon for loot
-const lootIcon = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="12" cy="12" r="10" fill="#836EF9" stroke="white" stroke-width="2"/>
-  <text x="12" y="16" font-size="12" font-weight="bold" fill="white" text-anchor="middle">M</text>
-</svg>
-`)}`;
+const FAUCET_ICON_RENDER_SIZE = 28;
 
 // Avatar assets mapping
 const AVATAR_MAP: Record<string, string> = {
@@ -130,7 +126,6 @@ interface Faucet {
   remaining_coins: number;
   total_coins: number;
   is_active: boolean;
-  contract_address?: string;
 }
 
 export default function GameMap() {
@@ -158,6 +153,21 @@ export default function GameMap() {
     } as google.maps.Icon;
   }, [map, avatarId]);
 
+  // Faucet icon (Monad coin) sized for clarity
+  const faucetMarkerIcon = useMemo(() => {
+    const src = (monadCoin as unknown as { src: string }).src;
+    if (typeof window === 'undefined' || !(window as any).google) return src;
+    return {
+      url: src,
+      size: new window.google.maps.Size(FAUCET_ICON_RENDER_SIZE, FAUCET_ICON_RENDER_SIZE),
+      scaledSize: new window.google.maps.Size(FAUCET_ICON_RENDER_SIZE, FAUCET_ICON_RENDER_SIZE),
+      anchor: new window.google.maps.Point(
+        FAUCET_ICON_RENDER_SIZE / 2,
+        FAUCET_ICON_RENDER_SIZE / 2
+      ),
+    } as google.maps.Icon;
+  }, [map]);
+
   // Listen for avatar changes from ShopModal via storage events
   useEffect(() => {
     const handleStorage = (e: StorageEvent) => {
@@ -182,27 +192,18 @@ export default function GameMap() {
         params.append('lng', userLocation.lng.toString());
         params.append('radius', '10'); // 10km radius
       }
-
+      
       const response = await fetch(`/api/game/faucets?${params.toString()}`);
       if (!response.ok) {
         throw new Error('Failed to fetch faucets');
       }
-      const data = await response.json();
-
-      // Ensure faucets is always an array
-      if (!data || !data.faucets) {
-        return { faucets: [] };
-      }
-
-      return {
-        faucets: Array.isArray(data.faucets) ? data.faucets : [],
-      };
+      return response.json();
     },
     enabled: true,
     refetchInterval: 5000, // Refresh every 5 seconds for real-time updates
   });
 
-  const faucets = Array.isArray(faucetsData?.faucets) ? faucetsData.faucets : [];
+  const faucets = faucetsData?.faucets || [];
 
   // Get user location immediately on load
   useEffect(() => {
@@ -280,7 +281,7 @@ export default function GameMap() {
       );
 
       if (!withinRadius) {
-        alert(`You're too far from this faucet. You need to be within ${MINING_RADIUS_METERS} meters.`);
+        showToast(`You're too far from this faucet. You need to be within ${MINING_RADIUS_METERS} meters.`, 'error');
         return;
       }
 
@@ -334,12 +335,12 @@ export default function GameMap() {
         <Marker
           key={faucet.id}
           position={{ lat: faucet.lat, lng: faucet.lng }}
-          icon={lootIcon}
+          icon={faucetMarkerIcon}
           onClick={() => handleFaucetClick(faucet)}
           title={`${faucet.name} - ${faucet.remaining_coins}/${faucet.total_coins} coins remaining`}
         />
       ))}
-
+      
       {/* Mining Modal */}
       <FaucetMineModal
         isOpen={isMineModalOpen}
