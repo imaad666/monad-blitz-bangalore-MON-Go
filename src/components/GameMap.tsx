@@ -1,35 +1,36 @@
 'use client';
 
 import { Map, Marker } from '@vis.gl/react-google-maps';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAccount } from 'wagmi';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import FaucetMineModal from './FaucetMineModal';
 import { isWithinRadius } from '@/lib/distance';
+import avatarImg from '../../assets/default_avatar.png';
 
 const mapStyles = [
-  { elementType: 'geometry', stylers: [{ color: '#242f3e' }] },
-  { elementType: 'labels.text.stroke', stylers: [{ color: '#242f3e' }] },
-  { elementType: 'labels.text.fill', stylers: [{ color: '#746855' }] },
+  { elementType: 'geometry', stylers: [{ color: '#F9F6EE' }] },
+  { elementType: 'labels.text.stroke', stylers: [{ color: '#F9F6EE' }] },
+  { elementType: 'labels.text.fill', stylers: [{ color: '#000000' }] },
   {
     featureType: 'administrative.locality',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#d59563' }],
+    stylers: [{ color: '#000000' }],
   },
-  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#38414e' }] },
-  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#212a37' }] },
-  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#9ca5b3' }] }, // Keep street names
+  { featureType: 'road', elementType: 'geometry', stylers: [{ color: '#836EF9' }] },
+  { featureType: 'road', elementType: 'geometry.stroke', stylers: [{ color: '#836EF9' }] },
+  { featureType: 'road', elementType: 'labels.text.fill', stylers: [{ color: '#000000' }] }, // Keep street names
   {
     featureType: 'road.highway',
     elementType: 'geometry',
-    stylers: [{ color: '#746855' }],
+    stylers: [{ color: '#836EF9' }],
   },
   {
     featureType: 'road.highway',
     elementType: 'labels.text.fill',
-    stylers: [{ color: '#d59563' }], // Keep highway names
+    stylers: [{ color: '#000000' }], // Keep highway names
   },
-  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#17263c' }] },
+  { featureType: 'water', elementType: 'geometry', stylers: [{ color: '#FFD54F' }] },
   // Hide all POI markers (businesses, attractions, etc.)
   {
     featureType: 'poi',
@@ -98,13 +99,9 @@ const lootIcon = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
 </svg>
 `)}`;
 
-// Player avatar icon
-const playerIcon = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
-<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="16" cy="16" r="14" fill="#836EF9" stroke="white" stroke-width="2"/>
-  <circle cx="16" cy="16" r="10" fill="#836EF9" opacity="0.8"/>
-</svg>
-`)}`;
+// Player avatar icon - use the PNG directly so the exact image shows as the dot
+const playerIcon: string = (avatarImg as unknown as { src: string }).src;
+const PLAYER_ICON_RENDER_SIZE = 36; // slightly larger than the previous 32px marker
 
 interface Faucet {
   id: string;
@@ -124,6 +121,19 @@ export default function GameMap() {
   const [hasCentered, setHasCentered] = useState(false);
   const [selectedFaucet, setSelectedFaucet] = useState<Faucet | null>(null);
   const [isMineModalOpen, setIsMineModalOpen] = useState(false);
+
+  // Build a sized icon once Google Maps is available
+  const playerMarkerIcon = useMemo(() => {
+    if (typeof window === 'undefined' || !(window as any).google) return playerIcon;
+    return {
+      url: playerIcon,
+      scaledSize: new window.google.maps.Size(PLAYER_ICON_RENDER_SIZE, PLAYER_ICON_RENDER_SIZE),
+      anchor: new window.google.maps.Point(
+        PLAYER_ICON_RENDER_SIZE / 2,
+        PLAYER_ICON_RENDER_SIZE / 2
+      ),
+    } as google.maps.Icon;
+  }, [map]);
 
   // Fetch active faucets from Supabase
   const { data: faucetsData } = useQuery<{ faucets: Faucet[] }>({
@@ -270,7 +280,7 @@ export default function GameMap() {
     >
       {/* Player marker */}
       {userLocation && (
-        <Marker position={userLocation} icon={playerIcon} />
+        <Marker position={userLocation} icon={playerMarkerIcon} />
       )}
 
       {/* Faucet markers (coins) */}
