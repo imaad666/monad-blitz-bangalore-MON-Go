@@ -5,7 +5,6 @@ import GameMap from '@/components/GameMap';
 import LoginScreen from '@/components/LoginScreen';
 import WalletButton from '@/components/WalletButton';
 import CoordinatesDisplay from '@/components/CoordinatesDisplay';
-import LeaderboardToggle from '@/components/LeaderboardToggle';
 import CreateFaucetButton from '@/components/CreateFaucetButton';
 import ShopButton from '@/components/ShopButton';
 import ToastHost from '@/components/ToastHost';
@@ -63,10 +62,7 @@ function GameContent() {
             <CreateFaucetButton />
           </div>
           
-          {/* Right side - Leaderboard toggle */}
-          <div className="absolute top-4 right-4 z-10">
-            <LeaderboardToggle />
-        </div>
+          {/* Right side placeholder removed */}
         </>
       )}
     </div>
