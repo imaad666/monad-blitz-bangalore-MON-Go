@@ -24,13 +24,15 @@ export async function GET() {
     status.supabase.configured = true;
     try {
       // Try a simple query to test connection
-      const { error } = await supabaseServer
+      const result = await supabaseServer
         .from('faucets')
         .select('*')
         .limit(1);
 
+      const error = result.error;
+
       if (error) {
-        const message = error?.message ?? '';
+        const message = error.message ?? '';
         if (message.includes('relation') || message.includes('does not exist')) {
           status.supabase.connected = true;
           status.supabase.error = 'Connected, but "faucets" table does not exist';
