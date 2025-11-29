@@ -29,12 +29,14 @@ export async function GET() {
         .select('*')
         .limit(1);
       
-      // If error is about table not existing, connection still works
-      if (error && error.message.includes('relation') || error.message.includes('does not exist')) {
-        status.supabase.connected = true;
-        status.supabase.error = 'Connected, but "faucets" table does not exist';
-      } else if (error) {
-        status.supabase.error = error.message;
+      if (error) {
+        const message = error.message || '';
+        if (message.includes('relation') || message.includes('does not exist')) {
+          status.supabase.connected = true;
+          status.supabase.error = 'Connected, but "faucets" table does not exist';
+        } else {
+          status.supabase.error = message;
+        }
       } else {
         status.supabase.connected = true;
       }
